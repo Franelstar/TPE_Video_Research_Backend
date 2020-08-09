@@ -9,6 +9,7 @@ import os
 from werkzeug.utils import secure_filename
 import random
 import tensorflow as tf
+import config
 
 
 from .videoManager import *
@@ -18,11 +19,11 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'the quick brown fox jumps over the lazy   dog'
 app.config['CORS_HEADERS'] = 'Content-Type'
 
-cors = CORS(app, resources={r"/foo": {"origins": "http://127.0.0.1:5000"}})
+cors = CORS(app, resources={r"/foo": {"origins": config.URL}})
 
 # app.config.from_object('config')
 
-uploads_dir = os.path.join(app.instance_path, 'uploads')
+uploads_dir = '/var/www/API_TPE/Recherche/static/video'
 models_dir = os.path.join(app.instance_path, 'models')
 modelFilePath = os.path.join(models_dir, 'modelTPE2.h5')
 model = tf.keras.models.load_model(modelFilePath)
