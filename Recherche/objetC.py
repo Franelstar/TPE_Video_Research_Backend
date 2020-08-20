@@ -40,12 +40,18 @@ def get_list_objets():
 
 
 def chercher_objet(objets):
-    objets = get_objets(objets)
+    objets, liste = get_objets(objets)
     result = []
     path_image = config.URL + config.PATH_IMAGE_SHORT
     path_scene = config.URL + config.PATH_VIDEO_SCENE_SHORT
     path_video = config.URL + config.uploads_dir_SHORT
     for scene in objets:
+        objs = []
+        for l in liste:
+            if l[0] == scene[0]:
+                o = {'id_objet': l[1], 'proba': l[2], 'nom_objet': l[3].split(',')[0]}
+                objs.append(o)
+
         one = {'id_scene': scene[0],
                'id_video': scene[1],
                'num_scene': scene[2],
@@ -61,6 +67,8 @@ def chercher_objet(objets):
                'date_save': scene[15],
                'duree_video': scene[16].split('.')[0],
                'nom_type2': scene[17],
+               'nbre_objet': len(objs),
+               'liste_objets': objs,
                'vue': False}
         result.append(one)
 

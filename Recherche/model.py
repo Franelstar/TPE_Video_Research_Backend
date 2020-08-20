@@ -163,19 +163,33 @@ def get_objets(objets):
     query += "(SELECT vd.save_date FROM video as vd WHERE sc.id_video = vd.id_video), "
     query += "(SELECT vd.duree_str FROM video as vd WHERE sc.id_video = vd.id_video), "
     query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target) "
-    query += "FROM scene as sc "
+    query += "FROM scene as sc, objets_scene as s_o "
+    query += "WHERE sc.id_scene = s_o.id_scene AND ("
+    compteur = 0
+    for obj in objets:
+        if compteur == 0:
+            query += "s_o.id_objet = '" + obj + "'"
+        else:
+            query += " OR s_o.id_objet = '" + obj + "'"
+        compteur += 1
+    query += ") GROUP BY sc.id_scene"
+    cur.execute(query)
+    rows = cur.fetchall()
+
+    query = "SELECT s_o.*, (SELECT ob.name FROM objets as ob WHERE s_o.id_objet = ob.id) "
+    query += "FROM objets_scene as s_o "
     query += "WHERE "
     compteur = 0
     for obj in objets:
         if compteur == 0:
-            query += "sc.lieu_pos = '" + obj + "'"
+            query += "s_o.id_objet = '" + obj + "'"
         else:
-            query += " OR sc.lieu_pos = '" + obj + "'"
+            query += " OR s_o.id_objet = '" + obj + "'"
         compteur += 1
-    query += " GROUP BY sc.id_scene"
     cur.execute(query)
-    rows = cur.fetchall()
-    return rows
+    rows2 = cur.fetchall()
+
+    return rows, rows2
 
 # cur.close()
 # con.close()
