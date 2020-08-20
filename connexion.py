@@ -1,6 +1,22 @@
 import psycopg2
 # pip install psycopg2-binary
 
+label = []
+
+file = open('oj.txt', "r")
+for line in file:
+    p = line.split('\t')
+    p[1] = p[1].replace('\n', '')
+    label.append(p)
+file.close()
+
+print(label)
+
+#label.sort(key=lambda x: x[1])
+
+# for i in label:
+#    print(i[1].replace('_', ' '))
+
 con = psycopg2.connect(
     host='localhost',
     database='RechercheTPE',
@@ -8,25 +24,21 @@ con = psycopg2.connect(
     password='postgres', )
 
 cur = con.cursor()
+for objet in label:
+    res = cur.execute("INSERT INTO objets(id, name) VALUES ('{}', '{}')".format(objet[0], objet[1].replace('_', ' ').replace('\'', '')))
 
-#res = cur.execute("INSERT INTO scene_lieux_scene(id_scene, id_lieu, probabilite) VALUES ('{}', '{}', '{}')".format(
- #                   1, int(4), 3))
+con.commit()
 
-#con.commit()
+# print(res)
 
-#print(res)
+# rows = cur.fetchall()
+# if not rows:
+#    print('vide')
+#else:
+#    print(rows[0][0])
 
-cur.execute("SELECT * FROM video WHERE titre = '{}' and duree = '{}' and nbre_frame = '{}' and video_file = '{}' and duree_str = '{}'".format(
-            'rencontre.mp4', int(13), 337, '/home/franel/PycharmProjects/API_TPE/instance/uploads/chsniebqivegmgdqigox.mp4', '00:00:13.480'))
-rows = cur.fetchall()
-if not rows:
-    print('vide')
-else:
-    print(rows[0][0])
-
-for r in rows:
-    print("id: {}, name: {}".format(r[0], r[1]))
-
+#for r in rows:
+#    print("id: {}, name: {}".format(r[0], r[1]))
 
 cur.close()
 con.close()

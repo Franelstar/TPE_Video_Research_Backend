@@ -1,13 +1,8 @@
 import psycopg2
-import cv2 as cv
-import random
-import tensorflow as tf
-from tensorflow.keras.preprocessing import image
-import numpy as np
 import datetime
 import time
-import os
 import config
+from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
 # pip install psycopg2-binary
 
@@ -15,66 +10,16 @@ con = psycopg2.connect(
     host=config.DB_HOST,
     database=config.DB_DATABASE,
     user=config.DB_USER,
-    password=config.DB_PASSWORD, )
+    password=config.DB_PASSWORD)
 
 cur = con.cursor()
 
 
-def prediction(frame_choisi, cap, loaded_model, predictions_tempo):
-    for j in range(len(frame_choisi)):
-        cap.set(cv.CAP_PROP_POS_FRAMES, frame_choisi[j])
-        res, frame = cap.read()
-        if j == 0:
-            os.chdir(config.PATH_IMAGE_LONG)
-            cv.imwrite(predictions_tempo[j]['image'], frame)
-        frame = tf.image.resize(frame, [224, 224], method='nearest')
-        X = image.img_to_array(frame)
-        X = np.expand_dims(X, axis=0)
-        images = np.vstack([X])
-        images = images / 255
-        predictions_tempo[j]['classe'] = loaded_model.predict_classes(images)[0]
-        predictions_tempo[j]['proba'] = max(loaded_model.predict(images)[0])
-
-    if len(predictions_tempo) == 1:
-        return predictions_tempo[0]
-    else:
-        if predictions_tempo[0]['classe'] == predictions_tempo[1]['classe'] or predictions_tempo[0]['classe'] == \
-                predictions_tempo[2]['classe']:
-            return predictions_tempo[0]
-        elif predictions_tempo[1]['classe'] == predictions_tempo[2]['classe']:
-            return predictions_tempo[1]
-        else:
-            if predictions_tempo[0]['proba'] > predictions_tempo[1]['proba'] and predictions_tempo[0]['proba'] > \
-                    predictions_tempo[2]['proba']:
-                return predictions_tempo[0]
-            elif predictions_tempo[1]['proba'] > predictions_tempo[2]['proba']:
-                return predictions_tempo[1]
-            else:
-                return predictions_tempo[2]
-
-
-def save_video(title, file_name, scene_list, model, name_v):
+def save_video_db(title, file_name, scene_list, predictions, name_v):
     try:
         cur.execute('SELECT * FROM lieux_scene WHERE etat_lieux_scene = true')
         targets = cur.fetchall()
-        path_image = config.URL+config.PATH_IMAGE_SHORT
-
-        cap = cv.VideoCapture(file_name)
-        predictions = [{'classe': '', 'proba': 0, 'image': ''} for i in range(len(scene_list))]
-        for i, scene in enumerate(scene_list):
-            debut = scene[0].get_frames()
-            fin = scene[1].get_frames()
-            if (fin - debut) > 4:
-                frame_choisi = random.sample([i for i in range(debut, fin - 1)], 3)
-            else:
-                frame_choisi = [debut]
-
-            # On crée limage
-            name_image = name_v + str(i) + '.jpg'
-
-            predictions_tempo = [{'classe': '', 'proba': 0, 'image': name_image} for i in range(len(frame_choisi))]
-
-            predictions[i] = prediction(frame_choisi, cap, model, predictions_tempo)
+        path_image = config.URL + config.PATH_IMAGE_SHORT
 
         _, scene = enumerate(scene_list[len(scene_list) - 1])
         frame_number = scene[1].get_frames()
@@ -94,14 +39,15 @@ def save_video(title, file_name, scene_list, model, name_v):
             cur.execute(query)
 
             query = "SELECT * FROM video "
-            query += "WHERE titre = '{}' and duree = '{}' and nbre_frame = '{}' ".format(title, int(seconde), frame_number)
+            query += "WHERE titre = '{}' and duree = '{}' and nbre_frame = '{}' ".format(title, int(seconde),
+                                                                                         frame_number)
             query += "and video_file = '{}' and duree_str = '{}'".format(file_name, time_str)
             cur.execute(query)
 
             rows = cur.fetchall()
             result_scenes = []
             if not rows:
-                return False, [{'Erreur': 'Une erreur s\'est produite, veillez contacter l\'administrateur'}]
+                return False, [{'Erreur': 'An error has occurred, please contact the administrator'}]
             else:
                 id_video = rows[0][0]
                 for i in range(len(predictions)):
@@ -111,38 +57,125 @@ def save_video(title, file_name, scene_list, model, name_v):
                     debut_time = datetime.timedelta(hours=x_debut.tm_hour, minutes=x_debut.tm_min,
                                                     seconds=x_debut.tm_sec).total_seconds()
                     fin_time = datetime.timedelta(hours=x_fin.tm_hour, minutes=x_fin.tm_min,
-                                                   seconds=x_fin.tm_sec).total_seconds()
+                                                  seconds=x_fin.tm_sec).total_seconds()
+
+                    print('___________________________________________________________')
+                    print(name_v)
+                    ffmpeg_extract_subclip(file_name, int(debut_time), int(fin_time),
+                                           targetname=config.PATH_VIDEO_SCENE + '/' + str(i) + name_v)
 
                     query = "INSERT INTO "
                     query += "scene(id_video, num_scene, frame_debut, frame_fin, nbre_frame, "
-                    query += "start_time, end_time, duree, lieu_pos, proba, image) "
-                    query += "VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')".format(
+                    query += "start_time, end_time, duree, lieu_pos, proba, image, url) "
+                    query += "VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')".format(
                         id_video, i + 1, int(debut[1].get_frames()), int(fin[1].get_frames()),
                                   int(fin[1].get_frames()) - int(debut[1].get_frames()), int(debut_time),
                         int(fin_time), int(fin_time) - int(debut_time), predictions[i]['classe'],
-                        predictions[i]['proba'], predictions[i]['image'])
+                        predictions[i]['proba'], predictions[i]['image'], str(i) + name_v)
 
                     cur.execute(query)
 
-                    template = {'num': str(i+1), 'image': path_image + predictions[i]['image'],
+                    query = "SELECT id_scene FROM scene "
+                    query += "WHERE id_video = '{}' and num_scene = '{}'".format(id_video, i + 1)
+                    cur.execute(query)
+                    id_scene = cur.fetchall()
+
+                    template = {'num': str(i + 1), 'image': path_image + predictions[i]['image'],
+                                'image_court': predictions[i]['image'],
                                 'nbre_frame': str(int(fin[1].get_frames()) - int(debut[1].get_frames())),
                                 'duree': str(int(fin_time) - int(debut_time)),
                                 'scene_lieu': str(targets[predictions[i]['classe']][1]),
-                                'proba': str(predictions[i]['proba'])}
+                                'proba': str(predictions[i]['proba']),
+                                'id': '{}'.format(id_scene[0][0])}
 
                     result_scenes.append(template)
 
             con.commit()
             result = [{'video': {'titre': title, 'duree': int(seconde), 'duree_str': time_str,
                                  'nbre_scene': len(predictions), 'nbre_frame': frame_number,
-                                 'Success': 'Sauvegarde réussie'},
-                       'scenes': [{i:   result_scenes[i]} for i in range(len(result_scenes))]}]
+                                 'Success': 'Saved successfully'},
+                       'scenes': [{i: result_scenes[i]} for i in range(len(result_scenes))]}]
             return True, result
         else:
-            return False, [{'Erreur': 'La vidéo que vous voulez enrégistrer existe déjà dans le système'}]
+            return False, [{'Erreur': 'The video you want to record already exists in the system'}]
 
     except:
         con.rollback()
+
+
+def save_objets_db(data):
+    try:
+        for i, scene in enumerate(data[0]['scenes']):
+            id_scene = scene.get(i)['id']
+            for j, obj in enumerate(scene.get(i)['liste_objets']):
+                query = "INSERT INTO "
+                query += "objets_scene(id_scene, id_objet, proba) "
+                query += "VALUES ('{}', '{}', '{}')".format(id_scene, obj['id_objet'], float(obj['proba']))
+                cur.execute(query)
+                con.commit()
+        return True
+    except:
+        con.rollback()
+
+
+def get_list_scene_db():
+    query = "SELECT l_s.nom, l_s.num_target FROM lieux_scene as l_s, scene as sc "
+    query += "WHERE sc.lieu_pos = l_s.num_target GROUP BY l_s.id_lieux_scene"
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    return rows
+
+
+def get_list_objets_db():
+    query = "SELECT ob.name, ob.id FROM objets as ob, objets_scene as o_s "
+    query += "WHERE o_s.id_objet = ob.id GROUP BY ob.id"
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    return rows
+
+
+def get_scene(scenes):
+    query = "SELECT sc.*, (SELECT vd.video_file FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.titre FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.save_date FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.duree_str FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target) "
+    query += "FROM scene as sc "
+    query += "WHERE "
+    compteur = 0
+    for scene in scenes:
+        if compteur == 0:
+            query += "sc.lieu_pos = '" + scene + "'"
+        else:
+            query += " OR sc.lieu_pos = '" + scene + "'"
+        compteur += 1
+    query += " GROUP BY sc.id_scene"
+    cur.execute(query)
+    rows = cur.fetchall()
+    return rows
+
+
+def get_objets(objets):
+    query = "SELECT sc.*, (SELECT vd.video_file FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.titre FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.save_date FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.duree_str FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target) "
+    query += "FROM scene as sc "
+    query += "WHERE "
+    compteur = 0
+    for obj in objets:
+        if compteur == 0:
+            query += "sc.lieu_pos = '" + obj + "'"
+        else:
+            query += " OR sc.lieu_pos = '" + obj + "'"
+        compteur += 1
+    query += " GROUP BY sc.id_scene"
+    cur.execute(query)
+    rows = cur.fetchall()
+    return rows
 
 # cur.close()
 # con.close()
