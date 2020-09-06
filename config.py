@@ -13,3 +13,4 @@ uploads_dir = "/var/www/API_TPE/Recherche/static/video"
 uploads_dir_SHORT = "/static/video/"
 PATH_VIDEO_SCENE = "/var/www/API_TPE/Recherche/static/scenes"
 PATH_VIDEO_SCENE_SHORT = "/static/scenes/"
+PAR_PAGE = 10

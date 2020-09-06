@@ -9,6 +9,7 @@ from .videoManager import *
 from .sceneC import *
 from .objetC import *
 from .chercher import *
+from .PersonC import *
 import config
 
 app = Flask(__name__)
@@ -21,7 +22,17 @@ cors = CORS(app, resources={r"/foo": {"origins": config.URL}})
 
 models_dir = os.path.join(app.instance_path, 'models')
 modelFilePath = os.path.join(models_dir, 'modelTPE2.h5')
+model0FilePath = os.path.join(models_dir, 'modelTPE0.h5')
+model1_1FilePath = os.path.join(models_dir, 'modelTPE1_1.h5')
+model1_2FilePath = os.path.join(models_dir, 'modelTPE1_2.h5')
+model2_1FilePath = os.path.join(models_dir, 'modelTPE2_1.h5')
+model2_2FilePath = os.path.join(models_dir, 'modelTPE2_2.h5')
 model = tf.keras.models.load_model(modelFilePath)
+model0 = tf.keras.models.load_model(model0FilePath)
+model1_1 = tf.keras.models.load_model(model1_1FilePath)
+model1_2 = tf.keras.models.load_model(model1_2FilePath)
+model2_1 = tf.keras.models.load_model(model2_1FilePath)
+model2_2 = tf.keras.models.load_model(model2_2FilePath)
 model_inception_v3 = InceptionV3(include_top=True,
                                  weights='imagenet',
                                  input_tensor=None,
@@ -54,23 +65,18 @@ def uploadVideo():
         scene_list = get_scenes(videoFilePath)
 
         responder, data = save_video(title=videoFileName, file_name=videoFilePath, scene_list=scene_list, name_v=name_v,
-                                     model=model, name=name)
+                                     name=name, model0=model0, model1_1=model1_1, model1_2=model1_2, model2_1=model2_1,
+                                     model2_2=model2_2)
         if responder:
             responder, data = save_objet(data=data, model=model_inception_v3,
                                          preprocess_input=preprocess_input, decode_predictions=decode_predictions)
-
+            if responder:
+                responder, data = save_person(data=data)
         if not responder:
             os.remove(videoFilePath)
 
-        # nparr = np.fromstring(r.data, np.uint8)
-        # img = cv.imdecode(nparr, cv.IMREAD_COLOR)
-        # cv.imshow(img)
-
         response = jsonify(data)
-        # response.headers.add('Access-Control-Allow-Origin', '*')
         return response
-        # return request.json
-        # print(r)
 
 
 # route http get pour recuperer les paramètres de recherche
@@ -92,22 +98,47 @@ def get_search():
         image = request.files.get('file')
         scenes = request.values.get('scenes')
         objets = request.values.get('objets')
-        print(image)
+        page = request.args.get('page', default=1, type=int)
+
+        scenes_image = []
+        objets_image = []
+        image_name = ""
+
+        if image:
+            image_name = image.filename
+            image.save(os.path.join(config.PATH_IMAGE_LONG, secure_filename(image.filename)))
+            scenes_image = get_scene_image(image.filename, model0, model1_1, model1_2, model2_1, model2_2)
+            objets_image = get_objet_image(image.filename, model=model_inception_v3,
+                                           preprocess_input=preprocess_input, decode_predictions=decode_predictions)
+
         if scenes:
             scenes = list(scenes.split('_'))
-            if scenes[len(scenes)-1] == '':
-                del(scenes[len(scenes)-1])
-            print(scenes)
+            if scenes[len(scenes) - 1] == '':
+                del (scenes[len(scenes) - 1])
+            scenes += scenes_image
+        elif scenes_image:
+            scenes = scenes_image
 
         if objets:
             objets = list(objets.split('_'))
             if objets[len(objets) - 1] == '':
                 del (objets[len(objets) - 1])
-            print(objets)
+            objets += objets_image
+        elif objets_image:
+            objets = objets_image
 
-        if image:
-            print('image existe')
+        result = recherche(scenes=scenes, objets=objets, image_name=image_name, page=page)
+        response = jsonify(result)
+        return response
 
-        result = recherche(scenes=scenes, objets=objets)
+
+# route http get pour faire une recherche par texte
+@app.route('/api/text_search', methods=['POST', 'OPTIONS'])
+@crossdomain(origin='*')
+def get_search_text():
+    if request.method == 'POST':
+        content_text = request.values.get('search')
+        page = request.args.get('page', default=1, type=int)
+        result = recherche_texte(content_text, page=page)
         response = jsonify(result)
         return response

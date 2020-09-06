@@ -1,5 +1,6 @@
 /instance/images/*
 /instance/uploads/*
+/instance/models/*
 /venv/
 /Recherche/static/images/*
 /Recherche/static/video/*

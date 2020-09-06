@@ -19,6 +19,10 @@ def save_video_db(title, file_name, scene_list, predictions, name_v):
     try:
         cur.execute('SELECT * FROM lieux_scene WHERE etat_lieux_scene = true')
         targets = cur.fetchall()
+        targets = sorted(targets, key=lambda val: val[0])
+        cur.execute('SELECT * FROM lieux_scene_1 WHERE etat_lieux_scene = true')
+        targets_1 = cur.fetchall()
+        targets_1 = sorted(targets_1, key=lambda val: val[0])
         path_image = config.URL + config.PATH_IMAGE_SHORT
 
         _, scene = enumerate(scene_list[len(scene_list) - 1])
@@ -59,19 +63,18 @@ def save_video_db(title, file_name, scene_list, predictions, name_v):
                     fin_time = datetime.timedelta(hours=x_fin.tm_hour, minutes=x_fin.tm_min,
                                                   seconds=x_fin.tm_sec).total_seconds()
 
-                    print('___________________________________________________________')
-                    print(name_v)
                     ffmpeg_extract_subclip(file_name, int(debut_time), int(fin_time),
                                            targetname=config.PATH_VIDEO_SCENE + '/' + str(i) + name_v)
 
                     query = "INSERT INTO "
                     query += "scene(id_video, num_scene, frame_debut, frame_fin, nbre_frame, "
-                    query += "start_time, end_time, duree, lieu_pos, proba, image, url) "
-                    query += "VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')".format(
-                        id_video, i + 1, int(debut[1].get_frames()), int(fin[1].get_frames()),
-                                  int(fin[1].get_frames()) - int(debut[1].get_frames()), int(debut_time),
-                        int(fin_time), int(fin_time) - int(debut_time), predictions[i]['classe'],
-                        predictions[i]['proba'], predictions[i]['image'], str(i) + name_v)
+                    query += "start_time, end_time, duree, lieu_pos, proba, image, url, lieu_pos_2, proba_2) "
+                    query += "VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', " \
+                             "'{}')".format(id_video, i + 1, int(debut[1].get_frames()), int(fin[1].get_frames()),
+                                            int(fin[1].get_frames()) - int(debut[1].get_frames()), int(debut_time),
+                                            int(fin_time), int(fin_time) - int(debut_time), predictions[i]['classe'],
+                                            predictions[i]['proba'], predictions[i]['image'], str(i) + name_v,
+                                            predictions[i]['classe0'], predictions[i]['proba0'])
 
                     cur.execute(query)
 
@@ -86,6 +89,8 @@ def save_video_db(title, file_name, scene_list, predictions, name_v):
                                 'duree': str(int(fin_time) - int(debut_time)),
                                 'scene_lieu': str(targets[predictions[i]['classe']][1]),
                                 'proba': str(predictions[i]['proba']),
+                                'scene_lieu_2': str(targets_1[predictions[i]['classe0']][1]),
+                                'proba_2': str(predictions[i]['proba0']),
                                 'id': '{}'.format(id_scene[0][0])}
 
                     result_scenes.append(template)
@@ -118,6 +123,33 @@ def save_objets_db(data):
         con.rollback()
 
 
+def save_person_db(le_descripteur):
+    try:
+        query = "INSERT INTO "
+        query += "visage(descripteur) "
+        query += "VALUES ('{}')".format(le_descripteur)
+        cur.execute(query)
+        con.commit()
+
+        cur.execute("SELECT id FROM visage WHERE descripteur = '{}'".format(le_descripteur))
+        id_visage = cur.fetchall()
+        return id_visage[0]
+    except:
+        con.rollback()
+
+
+def save_person_scene_db(id_visage, id_scene):
+    try:
+        query = "INSERT INTO "
+        query += "visage_scene(id_scene, id_visage) "
+        query += "VALUES ('{}', '{}')".format(id_scene, id_visage)
+        cur.execute(query)
+        con.commit()
+        return True
+    except:
+        con.rollback()
+
+
 def get_list_scene_db():
     query = "SELECT l_s.nom, l_s.num_target FROM lieux_scene as l_s, scene as sc "
     query += "WHERE sc.lieu_pos = l_s.num_target GROUP BY l_s.id_lieux_scene"
@@ -141,7 +173,9 @@ def get_scene(scenes):
     query += "(SELECT vd.titre FROM video as vd WHERE sc.id_video = vd.id_video), "
     query += "(SELECT vd.save_date FROM video as vd WHERE sc.id_video = vd.id_video), "
     query += "(SELECT vd.duree_str FROM video as vd WHERE sc.id_video = vd.id_video), "
-    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target) "
+    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target), "
+    query += "(SELECT l_s1.nom FROM lieux_scene_1 as l_s1 WHERE sc.lieu_pos_2 = l_s1.num_target), "
+    query += "(SELECT count(*) FROM visage_scene as v_s WHERE sc.id_scene = v_s.id_scene) "
     query += "FROM scene as sc "
     query += "WHERE "
     compteur = 0
@@ -162,7 +196,9 @@ def get_objets(objets):
     query += "(SELECT vd.titre FROM video as vd WHERE sc.id_video = vd.id_video), "
     query += "(SELECT vd.save_date FROM video as vd WHERE sc.id_video = vd.id_video), "
     query += "(SELECT vd.duree_str FROM video as vd WHERE sc.id_video = vd.id_video), "
-    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target) "
+    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target), "
+    query += "(SELECT l_s1.nom FROM lieux_scene_1 as l_s1 WHERE sc.lieu_pos_2 = l_s1.num_target), "
+    query += "(SELECT count(*) FROM visage_scene as v_s WHERE sc.id_scene = v_s.id_scene) "
     query += "FROM scene as sc, objets_scene as s_o "
     query += "WHERE sc.id_scene = s_o.id_scene AND ("
     compteur = 0
@@ -190,6 +226,38 @@ def get_objets(objets):
     rows2 = cur.fetchall()
 
     return rows, rows2
+
+
+def get_visageDB():
+    query = "SELECT * FROM visage"
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    return rows
+
+
+def get_visage_sceneDB(id_visage):
+    query = "SELECT id_scene FROM visage_scene where id_visage = '{}'".format(id_visage)
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    return rows[0][0]
+
+
+def get_all_lieux_scene():
+    query = "SELECT * FROM lieux_scene"
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    return rows
+
+
+def get_all_objet_scene():
+    query = "SELECT * FROM objets"
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    return rows
 
 # cur.close()
 # con.close()

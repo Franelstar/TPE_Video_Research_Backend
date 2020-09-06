@@ -4,26 +4,13 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 import numpy as np
 import os
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import config
 
 from .model import *
 
 
-def prediction(frame_choisi, cap, loaded_model, predictions_tempo):
-    for j in range(len(frame_choisi)):
-        cap.set(cv.CAP_PROP_POS_FRAMES, frame_choisi[j])
-        res, frame = cap.read()
-        if j == 0:
-            os.chdir(config.PATH_IMAGE_LONG)
-            cv.imwrite(predictions_tempo[j]['image'], frame)
-        frame = tf.image.resize(frame, [224, 224], method='nearest')
-        X = image.img_to_array(frame)
-        X = np.expand_dims(X, axis=0)
-        images = np.vstack([X])
-        images = images / 255
-        predictions_tempo[j]['classe'] = loaded_model.predict_classes(images)[0]
-        predictions_tempo[j]['proba'] = round(max(loaded_model.predict(images)[0]), 4)
-
+def filtre(predictions_tempo):
     if len(predictions_tempo) == 1:
         return predictions_tempo[0]
     else:
@@ -42,9 +29,31 @@ def prediction(frame_choisi, cap, loaded_model, predictions_tempo):
                 return predictions_tempo[2]
 
 
-def save_video(title, file_name, scene_list, model, name_v, name):
+def prediction(frame_choisi, cap, loaded_model, predictions_tempo, save=False, binaire=False):
+    for j in range(len(frame_choisi)):
+        cap.set(cv.CAP_PROP_POS_FRAMES, frame_choisi[j])
+        res, frame = cap.read()
+        if j == 0 and save:
+            os.chdir(config.PATH_IMAGE_LONG)
+            cv.imwrite(predictions_tempo[j]['image'], frame)
+        frame = tf.image.resize(frame, [224, 224], method='nearest')
+        X = image.img_to_array(frame)
+        X = np.expand_dims(X, axis=0)
+        images = np.vstack([X])
+        images = images / 255
+        if binaire:
+            predictions_tempo[j]['classe'] = loaded_model.predict_classes(images)[0][0]
+        else:
+            predictions_tempo[j]['classe'] = loaded_model.predict_classes(images)[0]
+        predictions_tempo[j]['proba'] = round(max(loaded_model.predict(images)[0]), 4)
+
+    return filtre(predictions_tempo)
+
+
+def save_video(title, file_name, scene_list, name_v, name, model0, model1_1, model1_2, model2_1, model2_2):
     cap = cv.VideoCapture(file_name)
-    predictions = [{'classe': '', 'proba': 0, 'image': ''} for i in range(len(scene_list))]
+    predictions = [{'classe': '', 'proba': 0.0, 'image': '', 'classe0': '', 'proba0': 0.0, 'classe1': '', 'proba1': 0.0}
+                   for _ in range(len(scene_list))]
     for i, scene in enumerate(scene_list):
         debut = scene[0].get_frames()
         fin = scene[1].get_frames()
@@ -58,7 +67,43 @@ def save_video(title, file_name, scene_list, model, name_v, name):
 
         predictions_tempo = [{'classe': '', 'proba': 0, 'image': name_image} for i in range(len(frame_choisi))]
 
-        predictions[i] = prediction(frame_choisi, cap, model, predictions_tempo)
+        # Classe 0
+        result = prediction(frame_choisi, cap, model0, predictions_tempo, save=True, binaire=True)
+        predictions[i]['classe0'] = result['classe']
+        predictions[i]['proba0'] = result['proba']
+        predictions[i]['image'] = result['image']
+
+        # Classe 1
+        if predictions[i]['proba0'] < 0.5:
+            predictions[i]['classe0'] = 2  # Inconnu
+            predictions[i]['classe'] = 19  # Inconnu
+        else:
+            if predictions[i]['classe0'] == 0:  # Extereur
+                # Classe 1_1
+                result = prediction(frame_choisi, cap, model1_1, predictions_tempo, binaire=False)
+                predictions[i]['classe'] = result['classe']
+                predictions[i]['proba'] = result['proba']
+                if predictions[i]['proba'] < 0.5:
+                    predictions[i]['classe'] = 19  # Inconnu
+            else:  # Interier
+                # Classe 1_2
+                result = prediction(frame_choisi, cap, model1_2, predictions_tempo, binaire=True)
+                predictions[i]['classe1'] = result['classe']
+                predictions[i]['proba1'] = result['proba']
+                if predictions[i]['classe1'] == 0:  # House
+                    # Classe 2_1
+                    result = prediction(frame_choisi, cap, model2_1, predictions_tempo, binaire=False)
+                    predictions[i]['classe'] = result['classe'] + 7
+                    predictions[i]['proba'] = result['proba']
+                    if predictions[i]['proba'] < 0.5:
+                        predictions[i]['classe'] = 19  # Inconnu
+                else:  # No house
+                    # Classe 2_2
+                    result = prediction(frame_choisi, cap, model2_2, predictions_tempo, binaire=False)
+                    predictions[i]['classe'] = result['classe'] + 13
+                    predictions[i]['proba'] = result['proba']
+                    if predictions[i]['proba'] < 0.5:
+                        predictions[i]['classe'] = 19  # Inconnu
 
     return save_video_db(title, file_name, scene_list, predictions, name)
 
@@ -82,16 +127,77 @@ def chercher_scene(scenes):
                'duree_scene': scene[8],
                'type1': 'none',
                'type2': 'none',
-               'proba_type1': 'none',
+               'proba_type1': scene[14],
                'proba_type2': scene[10],
                'image_url': path_image + scene[11],
                'scene_url': path_scene + scene[12],
-               'video_url': path_video + scene[13].split('/')[-1],
-               'nom_video': scene[14],
-               'date_save': scene[15],
-               'duree_video': scene[16].split('.')[0],
-               'nom_type2': scene[17],
+               'video_url': path_video + scene[15].split('/')[-1],
+               'nom_video': scene[16],
+               'date_save': scene[17],
+               'duree_video': scene[18].split('.')[0],
+               'nom_type2': scene[19],
+               'nom_type1': scene[20],
+               'nbre_person': scene[21],
                'vue': False}
         result.append(one)
 
     return result
+
+
+def prediction_image(frame, loaded_model, predictions_tempo, binaire=False):
+    # frame = tf.image.resize(image, [224, 224], method='nearest')
+    X = image.img_to_array(frame)
+    X = np.expand_dims(X, axis=0)
+    images = np.vstack([X])
+    images = images / 255
+    if binaire:
+        predictions_tempo['classe'] = loaded_model.predict_classes(images)[0][0]
+    else:
+        predictions_tempo['classe'] = loaded_model.predict_classes(images)[0]
+    predictions_tempo['proba'] = round(max(loaded_model.predict(images)[0]), 4)
+    return predictions_tempo
+
+
+def prediction_image_(image_path, model0, model1_1, model1_2, model2_1, model2_2):
+    predictions = {'classe': '', 'proba': 0.0, 'image': '', 'classe0': '', 'proba0': 0.0, 'classe1': '', 'proba1': 0.0}
+    predictions_tempo = {'classe': '', 'proba': 0, 'image': ''}
+    frame = load_img(config.PATH_IMAGE_LONG + '/' + image_path, target_size=(224, 224))
+
+    # Classe 0
+    result = prediction_image(frame, model0, predictions_tempo, binaire=True)
+    predictions['classe0'] = result['classe']
+    predictions['proba0'] = result['proba']
+    predictions['image'] = result['image']
+
+    # Classe 1
+    if predictions['proba0'] < 0.5:
+        return []
+    else:
+        if predictions['classe0'] == 0:  # Extereur
+            # Classe 1_1
+            result = prediction_image(frame, model1_1, predictions_tempo, binaire=False)
+            predictions['classe'] = result['classe']
+            predictions['proba'] = result['proba']
+            if predictions['proba'] < 0.5:
+                return []
+        else:  # Interier
+            # Classe 1_2
+            result = prediction_image(frame, model1_2, predictions_tempo, binaire=True)
+            predictions['classe1'] = result['classe']
+            predictions['proba1'] = result['proba']
+            if predictions['classe1'] == 0:  # House
+                # Classe 2_1
+                result = prediction_image(frame, model2_1, predictions_tempo, binaire=False)
+                predictions['classe'] = result['classe'] + 7
+                predictions['proba'] = result['proba']
+                if predictions['proba'] < 0.5:
+                    return []
+            else:  # No house
+                # Classe 2_2
+                result = prediction_image(frame, model2_2, predictions_tempo, binaire=False)
+                predictions['classe'] = result['classe'] + 13
+                predictions['proba'] = result['proba']
+                if predictions['proba'] < 0.5:
+                    return []
+
+    return [str(predictions['classe'])]
