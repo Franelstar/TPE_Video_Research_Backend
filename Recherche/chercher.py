@@ -16,19 +16,41 @@ def recherche(scenes, objets, page, image_name=""):
     if image_name != "":
         scene_person = find_person(image_name)
     if scenes:
-        scenes += scene_person
         scene_scene = chercher_scene(scenes)
     if objets:
         scene_objet = chercher_objet(objets)
 
     liste_des_scenes = []
 
-    if not scenes and not objets:
+    if not scenes and not objets and not scene_person:
         return []
-    if not scenes:
+
+    if not scenes and not objets and scene_person:
+        liste_des_scenes = sorted(scene_person, key=lambda x: len(x['liste_objets']), reverse=True)
+
+    if not scenes and objets:
         liste_des_scenes = sorted(scene_objet, key=lambda x: len(x['liste_objets']), reverse=True)
-    if not objets:
+
+        if scene_person:
+            for l1 in scene_person:
+                trouve = False
+                for l2 in liste_des_scenes:
+                    if l1['id_scene'] == l2['id_scene']:
+                        trouve = True
+                if not trouve:
+                    liste_des_scenes.append(l1)
+
+    if not objets and scenes:
         liste_des_scenes = scene_scene
+
+        if scene_person:
+            for l1 in scene_person:
+                trouve = False
+                for l2 in liste_des_scenes:
+                    if l1['id_scene'] == l2['id_scene']:
+                        trouve = True
+                if not trouve:
+                    liste_des_scenes.append(l1)
     if scenes and objets:
         liste_des_scenes = sorted(scene_objet, key=lambda x: len(x['liste_objets']), reverse=True)
         for l1 in scene_scene:
@@ -38,6 +60,15 @@ def recherche(scenes, objets, page, image_name=""):
                     trouve = True
             if not trouve:
                 liste_des_scenes.append(l1)
+
+        if scene_person:
+            for l1 in scene_person:
+                trouve = False
+                for l2 in liste_des_scenes:
+                    if l1['id_scene'] == l2['id_scene']:
+                        trouve = True
+                if not trouve:
+                    liste_des_scenes.append(l1)
 
     data = {}
     debut = config.PAR_PAGE * (page - 1)

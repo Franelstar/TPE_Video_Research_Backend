@@ -228,6 +228,43 @@ def get_objets(objets):
     return rows, rows2
 
 
+def get_scene_by_id(list_scene):
+    query = "SELECT sc.*, (SELECT vd.video_file FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.titre FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.save_date FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT vd.duree_str FROM video as vd WHERE sc.id_video = vd.id_video), "
+    query += "(SELECT l_s.nom FROM lieux_scene as l_s WHERE sc.lieu_pos = l_s.num_target), "
+    query += "(SELECT l_s1.nom FROM lieux_scene_1 as l_s1 WHERE sc.lieu_pos_2 = l_s1.num_target), "
+    query += "(SELECT count(*) FROM visage_scene as v_s WHERE sc.id_scene = v_s.id_scene) "
+    query += "FROM scene as sc "
+    query += "WHERE ("
+    compteur = 0
+    for ids in list_scene:
+        if compteur == 0:
+            query += "sc.id_scene = '" + ids + "'"
+        else:
+            query += " OR sc.id_scene = '" + ids + "'"
+        compteur += 1
+    query += ") GROUP BY sc.id_scene"
+    cur.execute(query)
+    rows = cur.fetchall()
+
+    query = "SELECT s_o.*, (SELECT ob.name FROM objets as ob WHERE s_o.id_objet = ob.id) "
+    query += "FROM objets_scene as s_o "
+    query += "WHERE "
+    compteur = 0
+    for ids in list_scene:
+        if compteur == 0:
+            query += "s_o.id_scene = '" + ids + "'"
+        else:
+            query += " OR s_o.id_scene = '" + ids + "'"
+        compteur += 1
+    cur.execute(query)
+    rows2 = cur.fetchall()
+
+    return rows, rows2
+
+
 def get_visageDB():
     query = "SELECT * FROM visage"
     cur.execute(query)
@@ -241,7 +278,7 @@ def get_visage_sceneDB(id_visage):
     cur.execute(query)
 
     rows = cur.fetchall()
-    return rows[0][0]
+    return rows
 
 
 def get_all_lieux_scene():
